@@ -1,29 +1,28 @@
-const { chromium } = require('@playwright/test');
+const { chromium, devices } = require('@playwright/test');
 
 class UperTest {
-  userAgent =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.109 Safari/537.36";
-  // إعدادات المتصفح
-  args = [
-    "--disable-blink-features",
-    "--disable-blink-features=AutomationControlled",
-    "--disable-infobars",
-    "--window-size=1920,1080",
-    "--start-maximized",
-  ];
+  // Get all available device names from Playwright's devices list
+  deviceNames = Object.keys(devices);
 
   constructor(number) {
+    this.number = number;
+    
+    // Select a random device from Playwright's device list
+    this.deviceName = this.deviceNames[Math.floor(Math.random() * this.deviceNames.length)];
+    this.device = devices[this.deviceName];
+    
+    console.log(`Selected device for ${number}: ${this.deviceName}`);
+    
+    // Proxy configuration
     const proxy = {
       server: "as.2a5c7a83de539ea5.abcproxy.vip:4950",
       username: "Bwrka67HY5-zone-star-region-nl",
       password: "72237663",
     };
-    this.number = number;
-    this.args.push(`--user-agent="${this.userAgent}"`);
-    this.args.push("--disable-web-security");
+
+    // Browser options
     this.options = {
       headless: false,
-      args: this.args,
       ignoreDefaultArgs: ["--mute-audio", "--hide-scrollbars"],
       ignoreHTTPSErrors: true,
       bypassCSP: true,
@@ -36,10 +35,22 @@ class UperTest {
     let browser;
     try {
       browser = await chromium.launch(this.options);
-      const context = await browser.newContext();
+      
+      // Create a context with the selected device
+      const context = await browser.newContext({
+        ...this.device,
+        locale: ['en-US', 'en-GB', 'fr-FR', 'de-DE'][Math.floor(Math.random() * 4)],
+        timezoneId: ['America/New_York', 'Europe/London', 'Asia/Tokyo', 'Australia/Sydney'][Math.floor(Math.random() * 4)],
+        geolocation: {
+          latitude: 40 + (Math.random() * 10 - 5),
+          longitude: -74 + (Math.random() * 10 - 5)
+        },
+        permissions: ['geolocation']
+      });
+      
       const page = await context.newPage();
       
-      console.log(`Starting test for number: ${this.number}`);
+      console.log(`Starting test for number: ${this.number} with device: ${this.deviceName}`);
       
       await page.goto('https://auth.uber.com/v2/', { waitUntil: 'domcontentloaded' });
       await page.fill('#PHONE_NUMBER_or_EMAIL_ADDRESS', this.number);

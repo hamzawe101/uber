@@ -5,8 +5,8 @@ async function main() {
   const numbers = fs.readFileSync('numbers.txt', 'utf8').split('\r\n');
   
   // Process 5 numbers at a time
-  for (let i = 0; i < numbers.length; i += 15) {
-    const batch = numbers.slice(i, i + 15);
+  for (let i = 0; i < numbers.length; i += 5) {
+    const batch = numbers.slice(i, i + 5);
     const promises = batch.map(number => {
       try {
         const test = new UperTest(number);
