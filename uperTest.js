@@ -3,8 +3,11 @@ const fs = require('fs');
 const path = require('path');
 
 class UperTest {
-  // Get all available device names from Playwright's devices list
-  deviceNames = Object.keys(devices);
+  // قراءة ملف وصف الأجهزة
+  deviceDescriptors = JSON.parse(fs.readFileSync(path.join(__dirname, 'deviceDescriptorsSource.json'), 'utf8'));
+  
+  // الحصول على قائمة أسماء الأجهزة من الملف
+  deviceNames = Object.keys(this.deviceDescriptors);
 
   // Country code mapping (phone prefix to ISO code)
   countryCodeMap = {
@@ -206,23 +209,15 @@ class UperTest {
     'default': 'us'
   };
 
-  // List of common user agents to rotate
-  userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
-  ];
-
   constructor(number) {
     this.number = number;
     
-    // Extract the country code and local number
+    // اختيار جهاز عشوائي من ملف الأجهزة
+    this.deviceName = this.deviceNames[Math.floor(Math.random() * this.deviceNames.length)];
+    this.customDevice = this.deviceDescriptors[this.deviceName];
+    
+    // Determine country code from phone number
     let countryCode = 'us'; // Default
-    let localNumber = number;
     
     // Find the longest matching prefix
     let longestMatch = '';
@@ -230,19 +225,8 @@ class UperTest {
       if (number.startsWith(prefix) && prefix.length > longestMatch.length) {
         longestMatch = prefix;
         countryCode = this.countryCodeMap[prefix];
-        localNumber = number.substring(prefix.length); // Remove country code from number
       }
     }
-    
-    this.countryPrefix = longestMatch;
-    this.localNumber = localNumber;
-    
-    // Select a random device from Playwright's device list
-    this.deviceName = this.deviceNames[Math.floor(Math.random() * this.deviceNames.length)];
-    this.device = devices[this.deviceName];
-    
-    // Select a random user agent
-    this.userAgent = this.userAgents[Math.floor(Math.random() * this.userAgents.length)];
     
     // Proxy configuration with dynamic country code
     this.proxy = {
@@ -252,52 +236,16 @@ class UperTest {
     };
 
     console.log(`Selected device for ${number}: ${this.deviceName}`);
-    console.log(`Selected user agent: ${this.userAgent}`);
     console.log(`Country code detected: ${longestMatch} -> ${countryCode}`);
-    console.log(`Local number (without country code): ${localNumber}`);
     console.log(`Proxy for ${number}: ${this.proxy.server} (${this.proxy.username})`);
 
-    // Browser launch arguments to disable automation detection
+    // تقليل عدد الإعدادات للحصول على أداء أفضل
     this.launchArgs = [
       '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process',
-      '--disable-site-isolation-trials',
       '--disable-web-security',
-      '--disable-setuid-sandbox',
       '--no-sandbox',
-      '--disable-webgl',
-      '--disable-threaded-animation',
-      '--disable-threaded-scrolling',
-      '--disable-in-process-stack-traces',
-      '--disable-histogram-customizer',
-      '--disable-gl-extensions',
-      '--disable-composited-antialiasing',
-      '--disable-canvas-aa',
-      '--disable-3d-apis',
-      '--disable-accelerated-2d-canvas',
-      '--disable-accelerated-jpeg-decoding',
-      '--disable-accelerated-mjpeg-decode',
-      '--disable-app-list-dismiss-on-blur',
-      '--disable-accelerated-video-decode',
-      '--disable-dev-shm-usage',
-      '--ignore-certificate-errors',
-      '--window-size=1920,1080',
-      '--start-maximized',
-      '--hide-scrollbars',
-      '--mute-audio',
       '--disable-infobars',
-      '--disable-notifications',
-      '--disable-extensions',
-      '--disable-popup-blocking',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-breakpad',
-      '--disable-component-extensions-with-background-pages',
-      '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-      '--disable-ipc-flooding-protection',
-      '--enable-features=NetworkService,NetworkServiceInProcess',
-      '--force-color-profile=srgb',
-      '--metrics-recording-only',
+      '--window-size=1920,1080',
     ];
 
     // Browser options
@@ -308,255 +256,87 @@ class UperTest {
       ignoreHTTPSErrors: true,
       bypassCSP: true,
       proxy: this.proxy,
+      timeout: 30000,
     };
-    
-    // Create a unique session ID for this run
-    this.sessionId = Math.random().toString(36).substring(2, 15);
-  }
-
-  // Generate random delay between actions to mimic human behavior
-  async randomDelay(min = 500, max = 2000) {
-    const delay = Math.floor(Math.random() * (max - min)) + min;
-    await new Promise(resolve => setTimeout(resolve, delay));
-  }
-
-  // Simulate human-like typing
-  async humanType(page, selector, text) {
-    await page.focus(selector);
-    
-    // Type with random delays between keystrokes
-    for (const char of text) {
-      await page.keyboard.type(char);
-      await this.randomDelay(50, 150);
-    }
-  }
-
-  // Simulate human-like mouse movement
-  async humanMove(page, selector) {
-    // Get the bounding box of the element
-    const elementHandle = await page.$(selector);
-    const box = await elementHandle.boundingBox();
-    
-    // Start from a random position on the page
-    const startX = Math.random() * page.viewportSize().width;
-    const startY = Math.random() * page.viewportSize().height;
-    
-    // Calculate target position (slightly randomized within the element)
-    const targetX = box.x + box.width * (0.1 + Math.random() * 0.8);
-    const targetY = box.y + box.height * (0.1 + Math.random() * 0.8);
-    
-    // Move mouse in multiple steps with slight randomization
-    const steps = 10 + Math.floor(Math.random() * 10);
-    for (let i = 0; i <= steps; i++) {
-      const progress = i / steps;
-      // Add some randomness to the path
-      const randomOffsetX = Math.random() * 10 - 5;
-      const randomOffsetY = Math.random() * 10 - 5;
-      
-      const currentX = startX + (targetX - startX) * progress + randomOffsetX;
-      const currentY = startY + (targetY - startY) * progress + randomOffsetY;
-      
-      await page.mouse.move(currentX, currentY);
-      await this.randomDelay(10, 30);
-    }
-    
-    // Final precise movement to the target
-    await page.mouse.move(targetX, targetY);
-  }
-
-  // Create and manage browser fingerprint
-  async setupFingerprint(context) {
-    // Override permissions
-    await context.grantPermissions(['geolocation'], { origin: 'https://auth.uber.com' });
-    
-    // Set cookies from previous session if available
-    try {
-      const cookiesPath = path.join(__dirname, `cookies_${this.sessionId}.json`);
-      if (fs.existsSync(cookiesPath)) {
-        const cookiesString = fs.readFileSync(cookiesPath);
-        const cookies = JSON.parse(cookiesString);
-        await context.addCookies(cookies);
-        console.log(`Loaded cookies for session ${this.sessionId}`);
-      }
-    } catch (error) {
-      console.log('No previous cookies found, starting fresh session');
-    }
-    
-    // Override JavaScript properties that reveal automation
-    await context.addInitScript(() => {
-      // Override navigator properties
-      const newProto = navigator.__proto__;
-      delete newProto.webdriver;
-      
-      // Override permissions
-      navigator.permissions.query = (parameters) => {
-        return Promise.resolve({ state: 'granted', onchange: null });
-      };
-      
-      // Override plugins
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => {
-          return [
-            {
-              0: {
-                type: 'application/pdf',
-                suffixes: 'pdf',
-                description: 'Portable Document Format',
-                enabledPlugin: Plugin,
-              },
-              name: 'PDF Viewer',
-              description: 'Portable Document Format',
-              filename: 'internal-pdf-viewer',
-              length: 1,
-            }
-          ];
-        },
-      });
-      
-      // Override languages
-      Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en'],
-      });
-      
-      // Override hardware concurrency
-      Object.defineProperty(navigator, 'hardwareConcurrency', {
-        get: () => 8,
-      });
-      
-      // Override connection
-      Object.defineProperty(navigator, 'connection', {
-        get: () => {
-          return {
-            rtt: 100,
-            downlink: 10,
-            effectiveType: '4g',
-          };
-        },
-      });
-      
-      // Override Chrome
-      window.chrome = {
-        runtime: {},
-        loadTimes: function() {},
-        csi: function() {},
-        app: {},
-      };
-      
-      // Override iframe contentWindow access
-      const originalGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
-      Object.getOwnPropertyDescriptor = function(obj, prop) {
-        if (prop === 'contentWindow' && obj && obj.tagName && obj.tagName.toLowerCase() === 'iframe') {
-          return { configurable: true, enumerable: true, get: function() { return window; } };
-        }
-        return originalGetOwnPropertyDescriptor(obj, prop);
-      };
-      
-      // Override toString methods to hide proxy functions
-      const originalToString = Function.prototype.toString;
-      Function.prototype.toString = function() {
-        if (this === Function.prototype.toString) return originalToString.call(this);
-        if (this === navigator.permissions.query) return 'function query() { [native code] }';
-        return originalToString.call(this);
-      };
-    });
   }
 
   async run() {
     let browser;
     try {
       browser = await chromium.launch(this.options);
-      
-      // Create a context with the selected device
+      // random geolocation
+      const randomGeolocation = {
+        latitude: 33.5186 + (Math.random() * 10 - 5),
+        longitude: -7.5926 + (Math.random() * 10 - 5)
+      };
+      // استخدام معلومات الجهاز من ملف JSON
       const context = await browser.newContext({
-        ...this.device,
-        userAgent: this.userAgent,
-        viewport: { width: 1920, height: 1080 },
-        deviceScaleFactor: 1,
-        hasTouch: this.device.hasTouch || false,
+        userAgent: this.customDevice.userAgent,
+        viewport: this.customDevice.viewport,
+        deviceScaleFactor: this.customDevice.deviceScaleFactor,
+        isMobile: this.customDevice.isMobile,
+        hasTouch: this.customDevice.hasTouch,
         locale: 'en-US',
-        timezoneId: 'America/New_York',
-        geolocation: { longitude: -74 + Math.random(), latitude: 40 + Math.random() },
-        permissions: ['geolocation'],
-        colorScheme: 'light',
-        reducedMotion: 'no-preference',
-        forcedColors: 'none',
-        acceptDownloads: true,
-        defaultBrowserType: 'chromium',
-        isMobile: this.device.isMobile || false,
-        javaScriptEnabled: true,
+        timezoneId: 'Africa/Casablanca',
+        geolocation: randomGeolocation
       });
       
-      // Setup fingerprint spoofing
-      await this.setupFingerprint(context);
+      // إضافة سكريبت بسيط لتجنب الكشف
+      await context.addInitScript(() => {
+        // إخفاء خاصية webdriver
+        Object.defineProperty(navigator, 'webdriver', {
+          get: () => false,
+          configurable: true
+        });
+        
+        // إضافة plugins وهمية
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [1, 2, 3, 4, 5],
+        });
+        
+        // إضافة chrome وهمي
+        window.chrome = {
+          runtime: {},
+          loadTimes: function() {},
+          csi: function() {},
+          app: {},
+        };
+      });
       
       const page = await context.newPage();
       
       console.log(`Starting test for number: ${this.number}`);
       console.log(`Device: ${this.deviceName}`);
       
-      // Add event listeners to intercept and modify certain requests
-      await page.route('**/*', async (route) => {
-        const request = route.request();
-        
-        // Modify headers to appear more like a real browser
-        const headers = request.headers();
-        headers['Accept-Language'] = 'en-US,en;q=0.9';
-        headers['sec-ch-ua'] = '"Google Chrome";v="120", "Chromium";v="120", "Not=A?Brand";v="99"';
-        headers['sec-ch-ua-mobile'] = this.device.isMobile ? '?1' : '?0';
-        headers['sec-ch-ua-platform'] = this.device.isMobile ? '"Android"' : '"Windows"';
-        
-        // Continue with modified headers
-        await route.continue({ headers });
-      });
-      
-      // Random scrolling and mouse movements before navigating
-      await this.randomDelay(1000, 3000);
-      
-      // Now navigate to the actual test page with randomized timing
+      // الانتقال إلى الصفحة المطلوبة
       await page.goto('https://auth.uber.com/v2/', { 
         waitUntil: 'domcontentloaded',
-        timeout: 50000
+        timeout: 30000
       });
       
-      // Simulate human browsing behavior - random scrolling
-      await this.randomDelay(1000, 2000);
-      await page.mouse.wheel(0, Math.random() * 100);
-      await this.randomDelay(500, 1500);
+      // انتظار قليلاً قبل ملء النموذج
+      await page.waitForTimeout(500);
       
-      // Move mouse like a human to the input field
-      await this.humanMove(page, '#PHONE_NUMBER_or_EMAIL_ADDRESS');
-      await this.randomDelay(300, 800);
+      // ملء رقم الهاتف
+      await page.fill('#PHONE_NUMBER_or_EMAIL_ADDRESS', this.number);
       
-      // Type like a human - using local number without country code
-      await this.humanType(page, '#PHONE_NUMBER_or_EMAIL_ADDRESS', this.localNumber);
+      // انتظار قليلاً قبل النقر
+      await page.waitForTimeout(300);
       
-      // Random delay before clicking
-      await this.randomDelay(800, 1500);
+      // النقر على زر التقديم
+      await page.click('#forward-button');
       
-      // Move mouse like a human to the button
-      await this.humanMove(page, '#forward-button');
-      await this.randomDelay(200, 500);
-     
-      
-      // Click with a slight delay
-      await page.mouse.down();
-      await this.randomDelay(50, 150);
-      await page.mouse.up();
-      
-      // Wait for page to navigate to the next page with randomized timing
-      await this.randomDelay(30000, 40000);
-      // click on the button #alt-action-resend-sms
+      // انتظار الاستجابة
+      await page.waitForTimeout(30000);
+
       await page.click('#alt-action-resend-sms');
-      await this.randomDelay(15000, 17000);
+
+      await page.waitForTimeout(14000);
+
       await page.click('#alt-action-resend-sms');
-      await this.randomDelay(15000, 17000);
-      await page.click('#alt-action-resend-sms');
-      await this.randomDelay(2000, 3000);
+
+      await page.waitForTimeout(15000);
       
-      // Save cookies for future sessions
-      const cookies = await context.cookies();
-      const cookiesPath = path.join(__dirname, `cookies_${this.sessionId}.json`);
-      fs.writeFileSync(cookiesPath, JSON.stringify(cookies));
       
       console.log(`Completed test for number: ${this.number}`);
     } catch (error) {
