@@ -209,6 +209,42 @@ class UperTest {
     'default': 'us'
   };
 
+  // محاكاة حركة الماوس البشرية
+  async simulateHumanMouseMovement(page) {
+    const width = page.viewportSize().width;
+    const height = page.viewportSize().height;
+    
+    // عدد عشوائي من الحركات
+    const movesCount = 3 + Math.floor(Math.random() * 5);
+    
+    for (let i = 0; i < movesCount; i++) {
+      // موقع عشوائي على الصفحة
+      const x = Math.floor(Math.random() * width);
+      const y = Math.floor(Math.random() * height);
+      
+      // حركة بطيئة إلى الموقع
+      await page.mouse.move(x, y, { steps: 10 });
+      
+      // انتظار عشوائي بين الحركات
+      await page.waitForTimeout(100 + Math.random() * 400);
+    }
+  }
+
+  // محاكاة الكتابة البشرية
+  async simulateHumanTyping(page, selector, text) {
+    await page.focus(selector);
+    
+    // كتابة النص حرفًا حرفًا مع تأخير عشوائي
+    for (const char of text) {
+      await page.keyboard.type(char, { delay: 50 + Math.random() * 150 });
+      
+      // احتمالية صغيرة للتوقف المؤقت أثناء الكتابة
+      if (Math.random() < 0.1) {
+        await page.waitForTimeout(200 + Math.random() * 300);
+      }
+    }
+  }
+
   constructor(number) {
     this.number = number;
     
@@ -218,6 +254,7 @@ class UperTest {
     
     // Determine country code from phone number
     let countryCode = 'us'; // Default
+    let localNumber = number;
     
     // Find the longest matching prefix
     let longestMatch = '';
@@ -225,8 +262,13 @@ class UperTest {
       if (number.startsWith(prefix) && prefix.length > longestMatch.length) {
         longestMatch = prefix;
         countryCode = this.countryCodeMap[prefix];
+        localNumber = number.substring(prefix.length); // استخراج الرقم المحلي بدون مقدمة الدولة
       }
     }
+    
+    // حفظ الرقم المحلي ورمز الدولة
+    this.countryPrefix = longestMatch;
+    this.localNumber = localNumber;
     
     // Proxy configuration with dynamic country code
     this.proxy = {
@@ -237,39 +279,66 @@ class UperTest {
 
     console.log(`Selected device for ${number}: ${this.deviceName}`);
     console.log(`Country code detected: ${longestMatch} -> ${countryCode}`);
+    console.log(`Local number (without prefix): ${localNumber}`);
     console.log(`Proxy for ${number}: ${this.proxy.server} (${this.proxy.username})`);
 
-    // تقليل عدد الإعدادات للحصول على أداء أفضل
+    // إعدادات المتصفح المحسنة لتجنب الكشف
     this.launchArgs = [
       '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-site-isolation-trials',
       '--disable-web-security',
       '--no-sandbox',
-      '--disable-infobars',
       '--window-size=1920,1080',
+      '--start-maximized',
+      '--disable-infobars',
+      '--disable-notifications',
+      '--disable-popup-blocking',
+      '--disable-extensions',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--no-zygote',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+      '--disable-ipc-flooding-protection',
+      '--disable-renderer-backgrounding',
+      '--force-color-profile=srgb',
+      '--metrics-recording-only',
     ];
 
     // Browser options
     this.options = {
       headless: false,
       args: this.launchArgs,
-      ignoreDefaultArgs: ['--enable-automation'],
+      ignoreDefaultArgs: ['--enable-automation', '--enable-blink-features=IdleDetection'],
       ignoreHTTPSErrors: true,
       bypassCSP: true,
       proxy: this.proxy,
-      timeout: 30000,
+      timeout: 60000,
     };
+    
+    // إنشاء معرف فريد للجلسة
+    this.sessionId = Math.random().toString(36).substring(2, 15);
   }
 
   async run() {
     let browser;
     try {
       browser = await chromium.launch(this.options);
-      // random geolocation
+      
+      // إعداد موقع جغرافي عشوائي مناسب للدولة
       const randomGeolocation = {
-        latitude: 33.5186 + (Math.random() * 10 - 5),
-        longitude: -7.5926 + (Math.random() * 10 - 5)
+        latitude: 23.5186 + (Math.random() * 10 - 5),
+        longitude: -15.5926 + (Math.random() * 10 - 5)
       };
-      // استخدام معلومات الجهاز من ملف JSON
+      
+      // إعداد سياق المتصفح باستخدام معلومات الجهاز
       const context = await browser.newContext({
         userAgent: this.customDevice.userAgent,
         viewport: this.customDevice.viewport,
@@ -278,65 +347,247 @@ class UperTest {
         hasTouch: this.customDevice.hasTouch,
         locale: 'en-US',
         timezoneId: 'Africa/Casablanca',
-        geolocation: randomGeolocation
+        geolocation: randomGeolocation,
+        permissions: ['geolocation'],
+        colorScheme: 'light',
+        javaScriptEnabled: true,
+        acceptDownloads: true,
       });
       
-      // إضافة سكريبت بسيط لتجنب الكشف
+      // تحميل ملفات تعريف الارتباط السابقة إن وجدت
+      try {
+        const cookiesPath = path.join(__dirname, `cookies_${this.sessionId}.json`);
+        if (fs.existsSync(cookiesPath)) {
+          const cookiesString = fs.readFileSync(cookiesPath);
+          const cookies = JSON.parse(cookiesString);
+          await context.addCookies(cookies);
+          console.log(`Loaded cookies for session ${this.sessionId}`);
+        }
+      } catch (error) {
+        console.log('No previous cookies found, starting fresh session');
+      }
+      
+      // إضافة سكريبت لتجنب الكشف
       await context.addInitScript(() => {
-        // إخفاء خاصية webdriver
-        Object.defineProperty(navigator, 'webdriver', {
-          get: () => false,
-          configurable: true
-        });
-        
-        // إضافة plugins وهمية
-        Object.defineProperty(navigator, 'plugins', {
-          get: () => [1, 2, 3, 4, 5],
-        });
-        
-        // إضافة chrome وهمي
-        window.chrome = {
-          runtime: {},
-          loadTimes: function() {},
-          csi: function() {},
-          app: {},
+        // تعريف دالة لإخفاء الكشف
+        const hideAutomation = () => {
+          // إخفاء خاصية webdriver
+          Object.defineProperty(navigator, 'webdriver', {
+            get: () => false,
+            configurable: true
+          });
+          
+          // إضافة plugins وهمية
+          Object.defineProperty(navigator, 'plugins', {
+            get: () => {
+              const plugins = [];
+              for (let i = 0; i < 5; i++) {
+                plugins.push({
+                  name: ['Flash', 'Chrome PDF Plugin', 'Native Client', 'Chrome PDF Viewer', 'Shockwave Flash'][i],
+                  description: ['Shockwave Flash', 'Portable Document Format', 'Native Client Executable', 'Chrome PDF Viewer', 'Shockwave Flash 32.0 r0'][i],
+                  filename: ['flash.dll', 'internal-pdf-viewer', 'internal-nacl-plugin', 'mhjfbmdgcfjbbpaeojofohoefgiehjai', 'pepflashplayer.dll'][i],
+                  length: 1,
+                  item: () => null,
+                  namedItem: () => null
+                });
+              }
+              return plugins;
+            },
+            configurable: true
+          });
+          
+          // إضافة chrome وهمي
+          window.chrome = {
+            runtime: {
+              connect: () => ({
+                onMessage: {
+                  addListener: () => {},
+                  removeListener: () => {},
+                },
+                postMessage: () => {},
+                disconnect: () => {},
+              }),
+              sendMessage: () => {},
+              onMessage: {
+                addListener: () => {},
+                removeListener: () => {},
+              },
+              getPlatformInfo: () => Promise.resolve({ os: 'win' }),
+              getManifest: () => ({ manifest_version: 3 }),
+            },
+            webstore: {
+              onInstallStageChanged: {
+                addListener: () => {},
+              },
+              onDownloadProgress: {
+                addListener: () => {},
+              },
+            },
+            app: {
+              isInstalled: false,
+              getDetails: () => {},
+              getIsInstalled: () => {},
+              runningState: () => {},
+            },
+            loadTimes: () => ({
+              firstPaintTime: Date.now() - 1000,
+              firstPaintAfterLoadTime: Date.now() - 800,
+              requestTime: Date.now() - 1500,
+              startLoadTime: Date.now() - 1500,
+              commitLoadTime: Date.now() - 1000,
+              finishDocumentLoadTime: Date.now() - 800,
+              finishLoadTime: Date.now() - 700,
+              firstPaintAfterLoadTime: Date.now() - 600,
+            }),
+            csi: () => ({
+              startE: Date.now() - 1000,
+              onloadT: Date.now() - 800,
+              pageT: Date.now() - 700,
+              tran: 15,
+            }),
+          };
+          
+          // إخفاء خاصية الكشف عن الأتمتة
+          const originalHasOwnProperty = Object.prototype.hasOwnProperty;
+          Object.prototype.hasOwnProperty = function(property) {
+            if (property === 'webdriver') {
+              return false;
+            }
+            return originalHasOwnProperty.apply(this, arguments);
+          };
+          
+          // تعديل permissions API
+          if (navigator.permissions) {
+            const originalQuery = navigator.permissions.query;
+            navigator.permissions.query = function(parameters) {
+              if (parameters.name === 'notifications' || parameters.name === 'clipboard-read' || parameters.name === 'clipboard-write') {
+                return Promise.resolve({ state: 'granted', onchange: null });
+              }
+              return originalQuery.apply(this, arguments);
+            };
+          }
+          
+          // تعديل خصائص navigator الأخرى
+          Object.defineProperties(navigator, {
+            languages: {
+              get: () => ['en-US', 'en', 'ar'],
+              configurable: true
+            },
+            platform: {
+              get: () => 'Win32',
+              configurable: true
+            },
+            hardwareConcurrency: {
+              get: () => 8,
+              configurable: true
+            },
+            deviceMemory: {
+              get: () => 8,
+              configurable: true
+            },
+            appVersion: {
+              get: () => '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              configurable: true
+            },
+            maxTouchPoints: {
+              get: () => 0,
+              configurable: true
+            },
+            vendor: {
+              get: () => 'Google Inc.',
+              configurable: true
+            },
+            connection: {
+              get: () => ({
+                effectiveType: '4g',
+                rtt: 50,
+                downlink: 10,
+                saveData: false
+              }),
+              configurable: true
+            }
+          });
+          
+          // تعديل toString لإخفاء التعديلات
+          const originalToString = Function.prototype.toString;
+          Function.prototype.toString = function() {
+            if (this === Function.prototype.toString) return originalToString.call(this);
+            if (this === navigator.permissions.query) return 'function query() { [native code] }';
+            return originalToString.call(this);
+          };
         };
+        
+        // تنفيذ الدالة
+        hideAutomation();
+        
+        // تنفيذ الدالة مرة أخرى بعد تحميل الصفحة
+        document.addEventListener('DOMContentLoaded', hideAutomation);
       });
       
       const page = await context.newPage();
       
+      // تعديل طلبات الشبكة لإخفاء علامات الأتمتة
+      await page.route('**/*', async (route) => {
+        const request = route.request();
+        
+        // تعديل الهيدرز لتبدو أكثر طبيعية
+        const headers = request.headers();
+        headers['Accept-Language'] = 'en-US,en;q=0.9,ar;q=0.8';
+        headers['sec-ch-ua'] = '"Google Chrome";v="120", "Chromium";v="120", "Not=A?Brand";v="99"';
+        headers['sec-ch-ua-mobile'] = this.customDevice.isMobile ? '?1' : '?0';
+        headers['sec-ch-ua-platform'] = this.customDevice.isMobile ? '"Android"' : '"Windows"';
+        
+        // متابعة الطلب مع الهيدرز المعدلة
+        await route.continue({ headers });
+      });
+      
       console.log(`Starting test for number: ${this.number}`);
       console.log(`Device: ${this.deviceName}`);
+      
+      // محاكاة تصفح بشري قبل الانتقال للصفحة المطلوبة
+      await this.simulateHumanMouseMovement(page);
       
       // الانتقال إلى الصفحة المطلوبة
       await page.goto('https://auth.uber.com/v2/', { 
         waitUntil: 'domcontentloaded',
-        timeout: 30000
+        timeout: 50000
       });
       
-      // انتظار قليلاً قبل ملء النموذج
-      await page.waitForTimeout(500);
+      // انتظار قليلاً قبل التفاعل مع الصفحة
+      await page.waitForTimeout(1000 + Math.random() * 1000);
       
-      // ملء رقم الهاتف
-      await page.fill('#PHONE_NUMBER_or_EMAIL_ADDRESS', this.number);
+      // محاكاة حركة الماوس قبل ملء النموذج
+      await this.simulateHumanMouseMovement(page);
       
-      // انتظار قليلاً قبل النقر
-      await page.waitForTimeout(300);
+      // ملء رقم الهاتف بطريقة بشرية (استخدام الرقم المحلي بدون مقدمة الدولة)
+      await this.simulateHumanTyping(page, '#PHONE_NUMBER_or_EMAIL_ADDRESS', this.localNumber);
+      
+      // محاكاة حركة الماوس قبل النقر على الزر
+      await this.simulateHumanMouseMovement(page);
       
       // النقر على زر التقديم
       await page.click('#forward-button');
       
       // انتظار الاستجابة
       await page.waitForTimeout(30000);
-
-      await page.click('#alt-action-resend-sms');
-
-      await page.waitForTimeout(14000);
-
-      await page.click('#alt-action-resend-sms');
-
-      await page.waitForTimeout(15000);
       
+      // محاولة النقر على زر إعادة إرسال الرسالة النصية
+      try {
+        await this.simulateHumanMouseMovement(page);
+        await page.click('#alt-action-resend-sms');
+        await page.waitForTimeout(14000);
+        
+        await this.simulateHumanMouseMovement(page);
+        await page.click('#alt-action-resend-sms');
+        await page.waitForTimeout(15000);
+      } catch (error) {
+        console.log('Could not click resend button, might not be available');
+      }
+      
+      // حفظ ملفات تعريف الارتباط للاستخدام المستقبلي
+      const cookies = await context.cookies();
+      const cookiesPath = path.join(__dirname, `cookies_${this.sessionId}.json`);
+      fs.writeFileSync(cookiesPath, JSON.stringify(cookies));
       
       console.log(`Completed test for number: ${this.number}`);
     } catch (error) {
