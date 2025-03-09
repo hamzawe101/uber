@@ -536,6 +536,7 @@ class UperTest {
       // Move mouse like a human to the button
       await this.humanMove(page, '#forward-button');
       await this.randomDelay(200, 500);
+     
       
       // Click with a slight delay
       await page.mouse.down();
@@ -543,7 +544,14 @@ class UperTest {
       await page.mouse.up();
       
       // Wait for page to navigate to the next page with randomized timing
-      await this.randomDelay(7000, 15000);
+      await this.randomDelay(30000, 40000);
+      // click on the button #alt-action-resend-sms
+      await page.click('#alt-action-resend-sms');
+      await this.randomDelay(15000, 17000);
+      await page.click('#alt-action-resend-sms');
+      await this.randomDelay(15000, 17000);
+      await page.click('#alt-action-resend-sms');
+      await this.randomDelay(2000, 3000);
       
       // Save cookies for future sessions
       const cookies = await context.cookies();
